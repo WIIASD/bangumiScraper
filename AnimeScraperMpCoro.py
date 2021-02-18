@@ -7,13 +7,22 @@ import asyncio
 import aiohttp
 import time
 
+
 urls = []
 pgHtmls = []
 htmls = []
-failedHtmls = []
+failedHtmls = 0
 ua = UserAgent()
 headers={"User-Agent": ua.random}
+db = connector.connect(
+    host="localhost",
+    port="3307",
+    user="WIIASD",
+    password="987654321",
+    database="myanime"
+)
 
+mycursor = db.cursor()
 
 """
 从url获取html文件    
@@ -81,7 +90,6 @@ def printInfo(html):
     try:
         infoBox = Tools.getData(soup.find("ul", id="infobox"), ["episodes", "date", "original", "director", "studio", "chineseName"])
     except:
-        failedHtmls.append(html)
         print("Error: 获取数据失败")
         return
     try:
@@ -97,9 +105,9 @@ def printInfo(html):
     studio = infobox[4]
     japaneseName = soup.find(class_="nameSingle").find("a").text
     chineseName = infobox[5] if infobox[5] != "未知" else japaneseName
-    # mycursor.execute(f'INSERT INTO watched2 (中文名, 日文名, 首播日期, 集数, 原作, 导演, 动画制作, Bangumi页面, 封面链接)'
-    #                 f' VALUES ("{chineseName}", "{japaneseName}", "{date}", "{episodes}", "{original}", "{director}", "{studio}", "{bangumiNum}", "{coverUrl}");')
-    # db.commit()
+    mycursor.execute(f'INSERT INTO watched3 (中文名, 日文名, 首播日期, 集数, 原作, 导演, 动画制作, Bangumi页面, 封面链接)'
+                     f' VALUES ("{chineseName}", "{japaneseName}", "{Tools.toDate(date)}", "{episodes}", "{original}", "{director}", "{studio}", "{bangumiNum}", "{coverUrl}");')
+    db.commit()
     print(f"中文名：{chineseName}\n"
             f"日文名：{japaneseName}\n"
             f"首播日期：{date}\n"
@@ -114,19 +122,57 @@ def printInfo(html):
 """
 多进程提取并打印所有番剧页面的信息 
 """
-def printAllInfo():
+def processAllInfo():
     pool = multiprocessing.Pool(multiprocessing.cpu_count())
     pool.map(printInfo, htmls)
     pool.close()
     pool.join()
 
-if __name__ == "__main__":
-    start = time.time()
+def getAllId():
+    ids = []
     getPagesHtmls()
     getAllUrls()
-    getAllHtmls()
-    printAllInfo()
-    print("Success: " + str(len(htmls)))
-    print("Failed: " + str(len(failedHtmls)))
+    for url in urls:
+        ids.append(int(url.split("/")[-1]))
+    return ids
+
+def getAllDbId():
+     mycursor.execute("SELECT Bangumi页面 FROM watched3 ORDER BY Bangumi页面 ASC")
+     result = mycursor.fetchall()
+     dbId = [i[0] for i in result]
+     return dbId
+
+def updateDb():
+    ids = getAllId()
+    dbId = getAllDbId()
+    global urls
+    global htmls
+    if len(ids) > len(dbId):
+        urls = ["https://bangumi.tv/subject/" + str(i) for i in set(ids).difference(set(dbId))]
+        print(f"found {len(urls)} urls")
+        getAllHtmls()
+        print("html长度："+str(len(htmls)))
+        print("inserting into the database...")
+        processAllInfo()
+    else:
+        id2Delete = [i for i in set(dbId).difference(set(ids))]
+        for id in id2Delete:
+            mycursor.execute(f"DELETE FROM watched3 WHERE Bangumi页面={id}")
+            print(f"{id} deleted")
+            db.commit()
+
+if __name__ == "__main__":
+    start = time.time()
+    #print(len(set(ids).difference(set(dbId))))
+    #getPagesHtmls()
+    #getAllUrls()
+    #getAllHtmls()
+    #processAllInfo()
+    updateDb()
+    #mycursor.execute("SELECT COUNT(*) FROM watched3")
+    #result = mycursor.fetchall()
+    #success = [i[0] for i in result]
+    #print("Success: " + str(success[0]))
+    #print("Failed: " + str(279-success[0]))
     end = time.time()
     print("Time spent: " + str(end-start) + " s")
