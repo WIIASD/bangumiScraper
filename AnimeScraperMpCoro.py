@@ -128,6 +128,7 @@ def processAllInfo():
     pool.close()
     pool.join()
 
+
 def getAllId():
     ids = []
     getPagesHtmls()
@@ -147,11 +148,14 @@ def updateDb():
     dbId = getAllDbId()
     global urls
     global htmls
+    if(len(ids) == len(dbId)):
+        print("Database is up to date !")
+        return
     if len(ids) > len(dbId):
         urls = ["https://bangumi.tv/subject/" + str(i) for i in set(ids).difference(set(dbId))]
         print(f"found {len(urls)} urls")
         getAllHtmls()
-        print("html长度："+str(len(htmls)))
+        print("htmls array length："+str(len(htmls)))
         print("inserting into the database...")
         processAllInfo()
     else:
