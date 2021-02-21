@@ -11,7 +11,6 @@ import time
 urls = []
 pgHtmls = []
 htmls = []
-failedHtmls = 0
 ua = UserAgent()
 headers={"User-Agent": ua.random}
 db = connector.connect(
@@ -85,12 +84,13 @@ def getAllHtmls():
 提取并打印单个番剧页面的信息
 :param html: 番剧页面的html  
 """
-def printInfo(html, resultList):
+def processInfo(html, resultList, failList):
     soup = BeautifulSoup(html, "lxml")
     try:
         infoBox = Tools.getData(soup.find("ul", id="infobox"), ["episodes", "date", "original", "director", "studio", "chineseName"])
     except:
         print("Error: 获取数据失败")
+        failList.append(html)
         return
     try:
         coverUrl = "https:" + soup.find("a", class_="thickbox cover")["href"]
@@ -98,6 +98,7 @@ def printInfo(html, resultList):
         coverUrl = "Error: 封面链接获取失败"
     infobox = Tools.fkDoubleQuote(infoBox)
     bangumiNum = soup.find("ul", class_="navTabs clearit").li.a["href"][9:]
+    ranking = float(soup.find("div", class_="global_score").span.text)
     episodes = infobox[0]
     date = infobox[1]  # if infobox[1] != "未知" else Tools.toDate(description[1])
     original = infobox[2]
@@ -105,9 +106,9 @@ def printInfo(html, resultList):
     studio = infobox[4]
     japaneseName = soup.find(class_="nameSingle").find("a").text
     chineseName = infobox[5] if infobox[5] != "未知" else japaneseName
-    resultList.append((chineseName, japaneseName, date, episodes, original, director, studio, bangumiNum, coverUrl))
-    #mycursor.execute(f'INSERT INTO watched3 (中文名, 日文名, 首播日期, 集数, 原作, 导演, 动画制作, Bangumi页面, 封面链接)'
-    #                 f' VALUES ("{chineseName}", "{japaneseName}", "{Tools.toDate(date)}", "{episodes}", "{original}", "{director}", "{studio}", "{bangumiNum}", "{coverUrl}");')
+    resultList.append((chineseName, japaneseName, date, episodes, original, director, studio, ranking, bangumiNum, coverUrl))
+    #mycursor.execute(f'INSERT INTO watched3 (中文名, 日文名, 首播日期, 集数, 原作, 导演, 动画制作, 评分, Bangumi页面, 封面链接)'
+    #                 f' VALUES ("{chineseName}", "{japaneseName}", "{Tools.toDate(date)}", "{episodes}", "{original}", "{director}", "{studio}", "{ranking}", "{bangumiNum}", "{coverUrl}");')
     #db.commit()
     #print(f"中文名：{chineseName}\n"
             #f"日文名：{japaneseName}\n"
@@ -123,11 +124,11 @@ def printInfo(html, resultList):
 """
 多进程提取并打印所有番剧页面的信息 
 """
-def processAllInfo(resultList):
+def processAllInfo(resultList, failList):
     global htmls
-    htmls = [(x, resultList) for x in htmls] #把htmls重构成（html, 多进程共享list）的形式
+    htmls = [(x, resultList, failList) for x in htmls] #把htmls重构成（html, 多进程共享list）的形式
     pool = multiprocessing.Pool(multiprocessing.cpu_count())
-    pool.starmap(printInfo, htmls)
+    pool.starmap(processInfo, htmls)
     pool.close()
     pool.join()
 
@@ -146,7 +147,7 @@ def getAllDbId():
      dbId = [i[0] for i in result]
      return dbId
 
-def updateDb(resultList):
+def updateDb(resultList, failList):
     ids = getAllId()
     dbId = getAllDbId()
     global urls
@@ -160,7 +161,7 @@ def updateDb(resultList):
         getAllHtmls()
         print("htmls array length："+str(len(htmls)))
         print("inserting into the database...")
-        processAllInfo(resultList)
+        processAllInfo(resultList, failList)
     else:
         id2Delete = [i for i in set(dbId).difference(set(ids))]
         for id in id2Delete:
@@ -172,13 +173,16 @@ if __name__ == "__main__":
     start = time.time()
     manager = multiprocessing.Manager()
     resultList = manager.list()
-    #print(len(set(ids).difference(set(dbId))))
-    #getPagesHtmls()
-    #getAllUrls()
-    #getAllHtmls()
-    #processAllInfo()
-    updateDb(resultList)
+    failedList = manager.list()
+    updateDb(resultList, failedList)
     print(*resultList, sep='\n')
-    print(len(resultList))
+    print(f"Insert successfully: {len(resultList)}")
+    print(f"Insert failed: {len(failedList)}")
     end = time.time()
     print("Time spent: " + str(end-start) + " s")
+    # 以下是老代码
+    # print(len(set(ids).difference(set(dbId))))
+    # getPagesHtmls()
+    # getAllUrls()
+    # getAllHtmls()
+    # processAllInfo()
