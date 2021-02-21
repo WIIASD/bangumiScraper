@@ -85,7 +85,7 @@ def getAllHtmls():
 提取并打印单个番剧页面的信息
 :param html: 番剧页面的html  
 """
-def printInfo(html):
+def printInfo(html, resultList):
     soup = BeautifulSoup(html, "lxml")
     try:
         infoBox = Tools.getData(soup.find("ul", id="infobox"), ["episodes", "date", "original", "director", "studio", "chineseName"])
@@ -105,26 +105,29 @@ def printInfo(html):
     studio = infobox[4]
     japaneseName = soup.find(class_="nameSingle").find("a").text
     chineseName = infobox[5] if infobox[5] != "未知" else japaneseName
-    mycursor.execute(f'INSERT INTO watched3 (中文名, 日文名, 首播日期, 集数, 原作, 导演, 动画制作, Bangumi页面, 封面链接)'
-                     f' VALUES ("{chineseName}", "{japaneseName}", "{Tools.toDate(date)}", "{episodes}", "{original}", "{director}", "{studio}", "{bangumiNum}", "{coverUrl}");')
-    db.commit()
-    print(f"中文名：{chineseName}\n"
-            f"日文名：{japaneseName}\n"
-            f"首播日期：{date}\n"
-            f"集数：{episodes}\n"
-            f"原作：{original}\n"
-            f"导演：{director}\n"
-            f"动画制作：{studio}\n"
-            f"Bangumi页面：{bangumiNum}\n"
-            f"封面链接：{coverUrl}\n"
-          )
+    resultList.append((chineseName, japaneseName, date, episodes, original, director, studio, bangumiNum, coverUrl))
+    #mycursor.execute(f'INSERT INTO watched3 (中文名, 日文名, 首播日期, 集数, 原作, 导演, 动画制作, Bangumi页面, 封面链接)'
+    #                 f' VALUES ("{chineseName}", "{japaneseName}", "{Tools.toDate(date)}", "{episodes}", "{original}", "{director}", "{studio}", "{bangumiNum}", "{coverUrl}");')
+    #db.commit()
+    #print(f"中文名：{chineseName}\n"
+            #f"日文名：{japaneseName}\n"
+            #f"首播日期：{date}\n"
+            #f"集数：{episodes}\n"
+            #f"原作：{original}\n"
+            #f"导演：{director}\n"
+            #f"动画制作：{studio}\n"
+            #f"Bangumi页面：{bangumiNum}\n"
+            #f"封面链接：{coverUrl}\n"
+          #)
 
 """
 多进程提取并打印所有番剧页面的信息 
 """
-def processAllInfo():
+def processAllInfo(resultList):
+    global htmls
+    htmls = [(x, resultList) for x in htmls] #把htmls重构成（html, 多进程共享list）的形式
     pool = multiprocessing.Pool(multiprocessing.cpu_count())
-    pool.map(printInfo, htmls)
+    pool.starmap(printInfo, htmls)
     pool.close()
     pool.join()
 
@@ -138,12 +141,12 @@ def getAllId():
     return ids
 
 def getAllDbId():
-     mycursor.execute("SELECT Bangumi页面 FROM watched3 ORDER BY Bangumi页面 ASC")
+     mycursor.execute("SELECT Bangumi页面 FROM watched2 ORDER BY Bangumi页面 ASC")
      result = mycursor.fetchall()
      dbId = [i[0] for i in result]
      return dbId
 
-def updateDb():
+def updateDb(resultList):
     ids = getAllId()
     dbId = getAllDbId()
     global urls
@@ -157,7 +160,7 @@ def updateDb():
         getAllHtmls()
         print("htmls array length："+str(len(htmls)))
         print("inserting into the database...")
-        processAllInfo()
+        processAllInfo(resultList)
     else:
         id2Delete = [i for i in set(dbId).difference(set(ids))]
         for id in id2Delete:
@@ -167,16 +170,15 @@ def updateDb():
 
 if __name__ == "__main__":
     start = time.time()
+    manager = multiprocessing.Manager()
+    resultList = manager.list()
     #print(len(set(ids).difference(set(dbId))))
     #getPagesHtmls()
     #getAllUrls()
     #getAllHtmls()
     #processAllInfo()
-    updateDb()
-    #mycursor.execute("SELECT COUNT(*) FROM watched3")
-    #result = mycursor.fetchall()
-    #success = [i[0] for i in result]
-    #print("Success: " + str(success[0]))
-    #print("Failed: " + str(279-success[0]))
+    updateDb(resultList)
+    print(*resultList, sep='\n')
+    print(len(resultList))
     end = time.time()
     print("Time spent: " + str(end-start) + " s")
