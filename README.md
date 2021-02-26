@@ -10,4 +10,4 @@ AnimeScraperMp -> 14s
 AnimescraperCoro -> 16s  
 AnimescrapperMpCoro -> 5s  
 
-Make sure to have your account logined before running the program
+
