@@ -1,4 +1,5 @@
 from fake_useragent import UserAgent
+from Databases import Databases
 from bs4 import BeautifulSoup
 from mysql import connector
 from Tools import Tools
@@ -13,15 +14,10 @@ import time
 #htmls = []
 ua = UserAgent()
 headers={"User-Agent": ua.random}
-db = connector.connect(
-    host="localhost",
-    port="3307",
-    user="WIIASD",
-    password="987654321",
-    database="myanime"
-)
+table = "watched2"
+db = Databases(host="localhost", port="3307", user="WIIASD", password="987654321", database="myanime", table=table)
 
-mycursor = db.cursor()
+
 
 async def getHtml(url):
     '''
@@ -178,9 +174,11 @@ def processInfo(html, resultList, failList):
     japaneseName = soup.find(class_="nameSingle").find("a").text
     chineseName = infobox[5] if infobox[5] != "未知" else japaneseName
     resultList.append((chineseName, japaneseName, date, episodes, original, director, studio, ranking, bangumiNum, coverUrl))
-    #mycursor.execute(f'INSERT INTO watched3 (中文名, 日文名, 首播日期, 集数, 原作, 导演, 动画制作, 评分, Bangumi页面, 封面链接)'
-    #                 f' VALUES ("{chineseName}", "{japaneseName}", "{Tools.toDate(date)}", "{episodes}", "{original}", "{director}", "{studio}", "{ranking}", "{bangumiNum}", "{coverUrl}");')
-    #db.commit()
+    if db.cursor == None:
+        return
+    db.cursor.execute(f'INSERT INTO {table} (中文名, 日文名, 首播日期, 集数, 原作, 导演, 动画制作, 评分, Bangumi页面, 封面链接)'
+                     f' VALUES ("{chineseName}", "{japaneseName}", "{Tools.toDate(date)}", "{episodes}", "{original}", "{director}", "{studio}", "{ranking}", "{bangumiNum}", "{coverUrl}");')
+    db.connection.commit()
     #print(f"中文名：{chineseName}\n"
             #f"日文名：{japaneseName}\n"
             #f"首播日期：{date}\n"
@@ -231,18 +229,18 @@ def getAllId():
         ids.append(int(url.split("/")[-1]))
     return ids
 
-def getAllDbId():
-     '''
-     获取数据库现有的所有(番剧页面）的id
-     Returns: int []
-        数据库所有（番剧页面）的id
-     -------
-
-     '''
-     mycursor.execute("SELECT Bangumi页面 FROM watched2 ORDER BY Bangumi页面 ASC")
-     result = mycursor.fetchall()
-     dbId = [i[0] for i in result]
-     return dbId
+#def getAllDbId():
+#     '''
+#     获取数据库现有的所有(番剧页面）的id
+#     Returns: int []
+#        数据库所有（番剧页面）的id
+#     -------
+#
+#     '''
+#     mycursor.execute("SELECT Bangumi页面 FROM watched2 ORDER BY Bangumi页面 ASC")
+#     result = mycursor.fetchall()
+#     dbId = [i[0] for i in result]
+#     return dbId
 
 def updateDb(resultList, failList):
     '''
@@ -259,29 +257,38 @@ def updateDb(resultList, failList):
 
     '''
     ids = getAllId()
-    dbId = getAllDbId()
-    if(len(ids) == len(dbId)):
+    dbId = db.getAllId()
+    if len(ids) == len(dbId):
         print("Database is up to date !")
         return
     if len(ids) > len(dbId):
         urls = ["https://bangumi.tv/subject/" + str(i) for i in set(ids).difference(set(dbId))]
-        print(f"found {len(urls)} urls")
+        print(f"found {len(urls)} new urls")
         htmls = getAllHtmls(urls)
-        print("inserting into the database...")
+        if db.cursor == None:
+            print("printing out all items...")
+        else:
+            print("inserting into the database...")
         processAllInfo(htmls, resultList, failList)
     else:
         id2Delete = [i for i in set(dbId).difference(set(ids))]
         for id in id2Delete:
-            mycursor.execute(f"DELETE FROM watched3 WHERE Bangumi页面={id}")
-            print(f"{id} deleted")
-            db.commit()
+            if db.deleteById(id):
+                print(f"{id} deleted")
+            else:
+                print(f"{id} delete failed")
 
 if __name__ == "__main__":
+
+    if db.cursor == None:
+        print("Not connected to the database!")
+    else:
+        print("Connected to the database!")
+
     start = time.time()
     manager = multiprocessing.Manager()
     resultList = manager.list() # 多进程共享列表，储存得到的信息
     failedList = manager.list() # 多进程共享列表，储存获取信息失败的html
-
     updateDb(resultList, failedList)
 
     print(*resultList, sep='\n')
